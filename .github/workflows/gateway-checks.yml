@@ -1,0 +1,63 @@
+name: API Gateway Quality Checks
+
+on:
+  pull_request:
+    branches: [production]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npx eslint . --ext .js
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm test
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan dependencies
+        uses: shiftleft/scan-action@master
+        with:
+          type: 'depscan'
+      - name: Run security tests
+        run: npm run security-test
+
+  report:
+    needs: [lint, test, security]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Aggregate reports
+        run: |
+          echo "代码规范报告: Lint ${{ jobs.lint.result }}" > report.md
+          echo "接口测试报告: Tests ${{ jobs.test.result }}" >> report.md
+          echo "安全扫描报告: Security ${{ jobs.security.result }}" >> report.md
+      - name: Create PR comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('report.md', 'utf8');
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
